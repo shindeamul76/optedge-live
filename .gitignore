@@ -1,0 +1,35 @@
+# ── Secrets — NEVER commit (Angel One credentials live here) ───────────────
+secrets.yaml
+secrets.*.yaml
+!secrets.example.yaml
+.env
+.env.*
+
+# ── Go build / test artifacts ──────────────────────────────────────────────
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.*
+
+# ── Live run artifacts (captures, audit logs, state) ───────────────────────
+# Raw frame captures — curate the golden fixtures into testdata/ deliberately.
+*.captured.jsonl
+# Persistence + recovery outputs (phase 5): keep runtime data out of git.
+/data/
+*.log
+position.json
+audit.jsonl
+bars.jsonl
+session_summary.jsonl
+
+# ── Editor / OS cruft ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
