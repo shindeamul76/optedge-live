@@ -16,6 +16,10 @@ secrets.*.yaml
 *.out
 coverage.*
 
+# Walk-forward baseline exported from the private engine (encodes the return
+# distribution). Keep only the example schema in git.
+wf_reference.json
+
 # ── Live run artifacts (captures, audit logs, state) ───────────────────────
 # Raw frame captures — curate the golden fixtures into testdata/ deliberately.
 *.captured.jsonl

@@ -2,10 +2,8 @@ package feed
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"net"
 	"sync"
 	"time"
 
@@ -53,9 +51,17 @@ const (
 	sessionCloseSec = 15*3600 + 30*60 // 55800
 )
 
-// readWake bounds how long a Read blocks so the loop periodically re-checks the
-// session window and context even when no ticks arrive.
-const readWake = 5 * time.Second
+// deadConnTimeout is the read deadline used purely as a DEAD-SOCKET detector: it is
+// extended on every received frame (market data or the ~25s heartbeat pong), so a
+// healthy connection never hits it. If it actually fires, the socket has been silent
+// too long and is treated as a genuine drop → reconnect. It must NOT be used as a
+// short periodic "wake": gorilla/websocket leaves the connection permanently unusable
+// after a read-deadline timeout (it stores the error in c.readErr forever).
+const deadConnTimeout = 45 * time.Second
+
+// sessionCheckPeriod is how often the readLoop watcher re-checks ctx-cancel and the
+// session window; on either it unblocks a blocked Read by closing the connection.
+const sessionCheckPeriod = 1 * time.Second
 
 const correlationID = "optedge-live"
 
@@ -331,37 +337,56 @@ func (s *Supervisor) clearConn() {
 }
 
 // readLoop reads until a real error (→ reconnect, non-nil return) or until the
-// session ends / ctx cancels (→ clean nil return). Read deadlines make a quiet
-// socket wake periodically; deadline timeouts are expected and not errors.
+// session ends / ctx cancels (→ clean nil return).
+//
+// A blocked Read can't observe ctx-cancel or session-end on its own, and a gorilla
+// read-deadline timeout can't be used as a wake (it kills the connection). So a
+// watcher goroutine unblocks the Read by CLOSING the connection on ctx-cancel or
+// session-end; the resulting read error is then recognized as a clean shutdown (not a
+// drop). The read deadline is only a dead-socket detector, extended on every frame.
 func (s *Supervisor) readLoop(ctx context.Context, conn Conn) error {
-	for {
-		if ctx.Err() != nil {
-			return nil
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		t := time.NewTicker(sessionCheckPeriod)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				conn.Close() // unblock a blocked Read
+				return
+			case <-t.C:
+				if !InSession(s.now(), s.cfg.Loc) {
+					conn.Close()
+					return
+				}
+			}
 		}
-		if !InSession(s.now(), s.cfg.Loc) {
-			return nil // clean: session over → disconnect, no backoff
-		}
+	}()
 
-		_ = conn.SetReadDeadline(s.now().Add(readWake))
+	for {
+		// Extend the dead-socket deadline on every frame; an actual expiry means the
+		// socket has been silent past the heartbeat interval → dead → reconnect.
+		_ = conn.SetReadDeadline(s.now().Add(deadConnTimeout))
 		mt, data, err := conn.Read()
 		if err != nil {
-			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() {
-				continue // expected wake to re-check session/ctx
+			// If we're shutting down or the session ended, the watcher closed the
+			// connection: that's a clean exit, not a drop.
+			if ctx.Err() != nil || !InSession(s.now(), s.cfg.Loc) {
+				return nil
 			}
 			return err // genuine drop → reconnect
 		}
 		if mt != websocket.BinaryMessage {
-			continue // heartbeat "pong" / control text
+			continue // heartbeat "pong" / control text — resets the deadline next iteration
 		}
 
 		tk, perr := ParseSnapQuote(data)
 		if perr != nil {
 			s.cfg.Logf("feed: parse: %v", perr)
 			continue
-		}
-		if !InSession(s.now(), s.cfg.Loc) {
-			continue // belt-and-suspenders: drop out-of-session ticks
 		}
 		select {
 		case s.ticks <- tk:

@@ -79,7 +79,7 @@ func TestSeamPair_PriceThenFill(t *testing.T) {
 	ch.Reconcile(23050, now)
 	setQuote(ch, exp, 23050, live.Call, 119, 121, now)
 
-	p, f := NewSeamPair(ch, func() time.Time { return now }, 0, nil)
+	p, f := NewSeamPair(ch, func() time.Time { return now }, 0, nil, "", nil)
 
 	mid := p.Price(live.Call, 99999 /*ignored spot*/, 23050, now)
 	if mid != 120 {
@@ -100,7 +100,7 @@ func TestSeamPair_MissingQuoteFallsBack(t *testing.T) {
 	now := time.Date(2026, 6, 30, 10, 0, 0, 0, loc)
 	ch.Reconcile(23050, now) // window built, but no quote set for 23050
 
-	p, f := NewSeamPair(ch, func() time.Time { return now }, 0, nil)
+	p, f := NewSeamPair(ch, func() time.Time { return now }, 0, nil, "", nil)
 	if mid := p.Price(live.Call, 0, 23050, now); mid != 0 {
 		t.Errorf("missing-quote mid = %v, want 0", mid)
 	}
@@ -119,8 +119,8 @@ func TestTwoPairsNoClobber(t *testing.T) {
 	setQuote(ch, exp, 23050, live.Call, 119, 121, now) // pair A's contract
 	setQuote(ch, exp, 23100, live.Put, 200, 205, now)  // pair B's contract
 
-	pa, fa := NewSeamPair(ch, func() time.Time { return now }, 0, nil)
-	pb, fb := NewSeamPair(ch, func() time.Time { return now }, 0, nil)
+	pa, fa := NewSeamPair(ch, func() time.Time { return now }, 0, nil, "", nil)
+	pb, fb := NewSeamPair(ch, func() time.Time { return now }, 0, nil, "", nil)
 
 	pa.Price(live.Call, 0, 23050, now)
 	pb.Price(live.Put, 0, 23100, now) // B quotes a different contract after A

@@ -1,0 +1,9 @@
+{
+  "_comment": "Walk-forward baseline the exit gate compares live results against. Export this ONCE at freeze time from the private optedge engine's evaluate package (the walk-forward OOS per-trade net returns as a fraction of capital, plus the trades/day band). Copy to wf_reference.json (gitignored). Values below are ILLUSTRATIVE placeholders, not real.",
+  "per_trade_returns": [
+    0.012, -0.008, 0.021, -0.015, 0.004, 0.018, -0.006, 0.009,
+    -0.011, 0.027, 0.002, -0.019, 0.014, 0.006, -0.003, 0.016
+  ],
+  "trades_per_day_p10": 0.8,
+  "trades_per_day_p90": 2.4
+}

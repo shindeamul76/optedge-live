@@ -126,29 +126,24 @@ func (c *Coordinator) consumeBars(ctx context.Context) {
 	}
 }
 
-// onBar emits the bar downstream and, for the future, re-centers the chain window and
-// applies the subscribe/unsubscribe diff to the feed.
+// onBar re-centers the chain window for a future bar (applying the sub/unsub diff to
+// the feed) BEFORE emitting the bar downstream, so the runner consuming Bars() sees a
+// chain already centered on this bar's spot. VIX/other bars are just forwarded.
 func (c *Coordinator) onBar(ctx context.Context, tb aggregator.TokenBar) {
+	if tb.Token == c.futureToken {
+		if sub, unsub, err := c.ch.Reconcile(tb.Bar.Close, tb.Bar.TS); err != nil {
+			c.logf("pipeline: chain reconcile: %v", err)
+		} else if len(sub) > 0 || len(unsub) > 0 {
+			c.feed.Modify(contractsToLists(sub), contractsToLists(unsub))
+			c.logf("pipeline: chain center=%.0f exp=%s +%d/-%d contracts",
+				c.ch.Center(), c.ch.Expiry().Format("2006-01-02"), len(sub), len(unsub))
+		}
+	}
+
 	select {
 	case c.bars <- tb:
 	case <-ctx.Done():
-		return
 	}
-
-	if tb.Token != c.futureToken {
-		return
-	}
-	sub, unsub, err := c.ch.Reconcile(tb.Bar.Close, tb.Bar.TS)
-	if err != nil {
-		c.logf("pipeline: chain reconcile: %v", err)
-		return
-	}
-	if len(sub) == 0 && len(unsub) == 0 {
-		return
-	}
-	c.feed.Modify(contractsToLists(sub), contractsToLists(unsub))
-	c.logf("pipeline: chain center=%.0f exp=%s +%d/-%d contracts",
-		c.ch.Center(), c.ch.Expiry().Format("2006-01-02"), len(sub), len(unsub))
 }
 
 // contractsToLists groups option contracts into a single NSE_FO subscribe/unsubscribe

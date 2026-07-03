@@ -55,17 +55,18 @@ func TestRunners_ORBBreakoutFillsFromChain(t *testing.T) {
 	// Fallback square-off much later, in case the exit didn't fire above.
 	r.OnFutureBar(bar("15:16:00", 23180, 23185, 23175, 23180, 100))
 
-	// Find the ORB trade.
-	var orb *live.Trade
+	// Find the ORB trade event.
+	var ev *TradeEvent
 	for i := range trades {
 		if trades[i].Runner == "ORB" {
-			orb = &trades[i].Trade
+			ev = &trades[i]
 			break
 		}
 	}
-	if orb == nil {
+	if ev == nil {
 		t.Fatalf("no ORB trade produced (events: %+v)", trades)
 	}
+	orb := &ev.Trade
 	if orb.Dir != live.Long || orb.OptType != live.Call || orb.Strike != 23050 {
 		t.Errorf("trade = %s %s %.0f, want LONG CALL 23050", orb.Dir, orb.OptType, orb.Strike)
 	}
@@ -78,5 +79,20 @@ func TestRunners_ORBBreakoutFillsFromChain(t *testing.T) {
 	}
 	if orb.ExitPrem != 100 {
 		t.Errorf("ExitPrem = %.2f, want 100 (real bid)", orb.ExitPrem)
+	}
+
+	// The synthetic shadow fired the identical decision with model fills — the
+	// fill-divergence baseline. It must exist and differ from the real chain fills.
+	if !ev.HasSynth {
+		t.Fatal("no synthetic twin for the trade")
+	}
+	if ev.Synth.Strike != orb.Strike || ev.Synth.Dir != orb.Dir {
+		t.Errorf("synth twin decided differently: %s %.0f vs %s %.0f", ev.Synth.Dir, ev.Synth.Strike, orb.Dir, orb.Strike)
+	}
+	if ev.Synth.EntryPrem <= 0 {
+		t.Errorf("synth entry not priced: %.2f", ev.Synth.EntryPrem)
+	}
+	if ev.Synth.EntryPrem == orb.EntryPrem {
+		t.Error("synth fill equals real fill — shadow is not independent")
 	}
 }

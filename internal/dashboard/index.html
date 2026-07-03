@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>optedge-live · incubation</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#c9d1d9; --dim:#8b949e;
+          --green:#3fb950; --red:#f85149; --amber:#d29922; --blue:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  header { display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--line); }
+  h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.3px; }
+  .pill { padding:2px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; padding:20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; }
+  .card h2 { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--dim); margin:0 0 8px; }
+  .big { font-size:24px; font-weight:600; }
+  .sub { font-size:12px; color:var(--dim); }
+  .full { grid-column:1/-1; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; }
+  th,td { text-align:right; padding:6px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th:first-child,td:first-child,th:nth-child(2),td:nth-child(2) { text-align:left; }
+  th { color:var(--dim); font-weight:500; }
+  .pos { color:var(--green); } .neg { color:var(--red); }
+  canvas { width:100%; height:220px; display:block; }
+  .muted { color:var(--dim); }
+  footer { padding:8px 20px; color:var(--dim); font-size:11px; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>optedge-live · incubation</h1>
+  <span id="conn" class="pill">…</span>
+  <span id="verdict" class="pill">…</span>
+  <span id="freeze" class="pill">…</span>
+  <span class="sub" style="margin-left:auto">updated <span id="updated">—</span></span>
+</header>
+
+<div class="grid">
+  <div class="card"><h2>Equity (₹)</h2><div class="big" id="equity">—</div><div class="sub" id="pnl">—</div></div>
+  <div class="card"><h2>Trades</h2><div class="big" id="ntrades">—</div><div class="sub" id="sample">min 40 to verdict</div></div>
+  <div class="card"><h2>Fill parity</h2><div class="big" id="fill">—</div><div class="sub">median real − synth</div></div>
+  <div class="card"><h2>Outcome (KS)</h2><div class="big" id="ks">—</div><div class="sub" id="ksp">p-value</div></div>
+  <div class="card"><h2>Frequency</h2><div class="big" id="freq">—</div><div class="sub">trades/day</div></div>
+  <div class="card"><h2>Chain ATM</h2><div class="big" id="chain">—</div><div class="sub" id="days">— days</div></div>
+
+  <div class="card full"><h2>Equity curve</h2><canvas id="chart"></canvas></div>
+
+  <div class="card full"><h2>Trades</h2>
+    <table><thead><tr>
+      <th>Runner</th><th>Contract</th><th>Entry</th><th>Exit</th><th>Fill in</th><th>Fill out</th><th>Net ₹</th><th>Div ₹</th><th>Reason</th>
+    </tr></thead><tbody id="rows"><tr><td colspan="9" class="muted">no trades yet</td></tr></tbody></table>
+  </div>
+</div>
+
+<footer>paper trading on live data · ₹0 at risk · polling /api/state every 2s</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const inr = n => "₹" + (n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+const cls = n => n > 0 ? "pos" : n < 0 ? "neg" : "";
+
+function pill(el, text, color){ el.textContent = text; el.style.color = color; el.style.borderColor = color; }
+
+function verdictColor(v){
+  if(v && v.startsWith("PASS")) return "var(--green)";
+  if(v && v.startsWith("FAIL")) return "var(--red)";
+  return "var(--amber)";
+}
+function connColor(s){ return s === "connected" ? "var(--green)" : s === "market-closed" ? "var(--dim)" : "var(--amber)"; }
+
+function drawChart(curve){
+  const c = $("chart"), dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w*dpr; c.height = h*dpr;
+  const ctx = c.getContext("2d"); ctx.scale(dpr,dpr); ctx.clearRect(0,0,w,h);
+  if(!curve || curve.length < 2){ ctx.fillStyle="#8b949e"; ctx.fillText("no data yet",10,20); return; }
+  const min = Math.min(...curve), max = Math.max(...curve), pad = 8;
+  const span = (max-min) || 1;
+  const x = i => pad + i*(w-2*pad)/(curve.length-1);
+  const y = v => h-pad - (v-min)*(h-2*pad)/span;
+  // baseline (starting capital)
+  ctx.strokeStyle="#30363d"; ctx.setLineDash([4,4]); ctx.beginPath();
+  ctx.moveTo(pad,y(curve[0])); ctx.lineTo(w-pad,y(curve[0])); ctx.stroke(); ctx.setLineDash([]);
+  // equity line
+  const up = curve[curve.length-1] >= curve[0];
+  ctx.strokeStyle = up ? "#3fb950" : "#f85149"; ctx.lineWidth=2; ctx.beginPath();
+  curve.forEach((v,i)=>{ i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v)); }); ctx.stroke();
+}
+
+function render(s){
+  pill($("conn"), s.conn_state, connColor(s.conn_state));
+  pill($("verdict"), s.gate.Verdict, verdictColor(s.gate.Verdict));
+  pill($("freeze"), s.freeze_label || "freeze —", s.freeze_ok ? "var(--green)" : "var(--red)");
+  $("updated").textContent = s.updated;
+
+  const pnl = s.equity - s.capital;
+  $("equity").textContent = inr(s.equity);
+  $("pnl").innerHTML = `<span class="${cls(pnl)}">${pnl>=0?"+":""}${inr(pnl)}</span> vs ${inr(s.capital)}`;
+  $("ntrades").textContent = s.gate.NTrades;
+  const flagged = s.gate.Flagged ? ` · ${s.gate.Flagged} flagged` : "";
+  $("sample").textContent = (s.gate.MinSampleMet ? "min-sample met" : `${s.gate.NTrades}/40 to verdict`) + flagged;
+
+  $("fill").innerHTML = `<span class="${s.gate.Fill.Pass?'pos':'neg'}">${s.gate.Fill.Pass?'PASS':'—'}</span>`;
+  $("fill").title = "median divergence";
+  $("fill").nextElementSibling.textContent = `median ${inr(s.gate.Fill.MedianDivergence)}`;
+
+  $("ks").textContent = s.gate.KSDone ? s.gate.KSStat.toFixed(3) : "—";
+  $("ksp").textContent = s.gate.KSDone ? `p=${s.gate.KSPValue.toFixed(3)} ${s.gate.OutcomePass?'✓':'✗'}` : "needs WF ref";
+  $("freq").textContent = s.gate.FreqDone ? s.gate.TradesPerDay.toFixed(2) : "—";
+  $("chain").textContent = s.chain_center ? s.chain_center.toFixed(0) : "—";
+  $("days").textContent = `${s.days} day${s.days===1?'':'s'}`;
+
+  const rows = $("rows");
+  if(!s.trades || !s.trades.length){ rows.innerHTML = '<tr><td colspan="9" class="muted">no trades yet</td></tr>'; }
+  else {
+    rows.innerHTML = s.trades.slice().reverse().map(t => `<tr>
+      <td>${t.runner}</td><td>${t.dir} ${t.opt_type} ${t.strike.toFixed(0)}</td>
+      <td>${t.entry_ts}</td><td>${t.exit_ts}</td>
+      <td>${t.entry_fill.toFixed(2)}</td><td>${t.exit_fill.toFixed(2)}</td>
+      <td class="${cls(t.net_rupees)}">${t.net_rupees.toFixed(0)}</td>
+      <td class="${cls(t.divergence)}">${t.divergence.toFixed(0)}</td>
+      <td>${t.reason}</td></tr>`).join("");
+  }
+  drawChart(s.equity_curve);
+}
+
+async function poll(){
+  try { const r = await fetch("/api/state"); render(await r.json()); }
+  catch(e){ pill($("conn"),"offline","var(--red)"); }
+}
+poll(); setInterval(poll, 2000);
+window.addEventListener("resize", poll);
+</script>
+</body>
+</html>

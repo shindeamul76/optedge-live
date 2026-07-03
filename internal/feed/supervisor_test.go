@@ -125,11 +125,9 @@ func (f *fakeConn) Heartbeat(time.Duration)         {}
 func (f *fakeConn) SetReadDeadline(time.Time) error { return nil }
 func (f *fakeConn) Close() error                    { f.closeOne.Do(func() { close(f.closed) }); return nil }
 
-// Read mirrors a real socket with a read deadline: it returns a timeout error
-// periodically so the supervisor's loop wakes to re-check session/ctx between ticks.
+// Read blocks until a frame arrives or the connection is closed (matching a real
+// socket). The supervisor's watcher closes the conn to unblock this on ctx/session.
 func (f *fakeConn) Read() (int, []byte, error) {
-	wake := time.NewTimer(20 * time.Millisecond)
-	defer wake.Stop()
 	select {
 	case b, ok := <-f.frames:
 		if !ok {
@@ -138,18 +136,8 @@ func (f *fakeConn) Read() (int, []byte, error) {
 		return websocket.BinaryMessage, b, nil
 	case <-f.closed:
 		return 0, nil, io.EOF
-	case <-wake.C:
-		return 0, nil, timeoutErr{}
 	}
 }
-
-// timeoutErr is a net.Error reporting a timeout — the deadline-exceeded case the
-// supervisor treats as an expected wake, not a disconnect.
-type timeoutErr struct{}
-
-func (timeoutErr) Error() string   { return "i/o timeout" }
-func (timeoutErr) Timeout() bool   { return true }
-func (timeoutErr) Temporary() bool { return true }
 
 // TestSupervisor_DeliversReconnectsReauths drives a full cycle with fakes: it
 // delivers a tick, forces a drop, and confirms the supervisor reconnects (new

@@ -58,11 +58,16 @@ The proven decision engine (`optedge`) is imported as a **pinned, versioned depe
 | 2 | Live feed: WS client, binary parser, resilient supervisor | ✅ done |
 | 3 | Bar aggregator + option-chain subscription + coordinator | ✅ done |
 | 4 | Real seams (`RealPricer`/`RealFill`/`LiveVIX`) + wire the Runners | ✅ done |
-| 5 | Persistence (jsonl audit + state) + crash recovery (replay-to-resume) | ⏳ next |
-| 6 | Parity engine (real-vs-synthetic divergence, gate metrics) + dashboard | ⏳ |
-| 7 | Freeze controller + run forward 3–6 months → gate | ⏳ |
+| 5 | Persistence (jsonl audit + position.json + bar log) + crash recovery (replay-to-resume) | ✅ done |
+| 6 | Parity engine (shadow synthetic runners, real-vs-synthetic divergence, KS/fill/frequency gate) + embedded dashboard | ✅ done |
+| 7 | Freeze controller (engine + config-hash fingerprint, provenance stamping, reset-clock detection) | ✅ done |
+| — | Run forward 3–6 months → gate → v4 or abandon | ▶ operational |
 
 The full low-level design, explained section by section, lives in [`docs/lld-explained/`](docs/lld-explained/).
+
+The whole pipeline is unit-tested offline (golden frames, injected clocks/transports, a
+crafted breakout that fills against the live chain, replay-to-resume, KS/gate math). Run
+`go test ./...`.
 
 ---
 
