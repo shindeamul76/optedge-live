@@ -49,6 +49,7 @@ func main() {
 	}
 
 	creds, err := broker.LoadCredentials(*secretsPath)
+	
 	if err != nil {
 		fatal("load credentials", err)
 	}
@@ -74,7 +75,7 @@ func main() {
 		effLot, src = fut.Lotsize, "auto from scrip master"
 	}
 	if effLot <= 0 {
-		effLot, src = 75, "fallback (scrip master had none)"
+		effLot, src = 65, "fallback (scrip master had none)"
 	}
 	fmt.Printf("lot size: %d (%s)\n", effLot, src)
 	if *lotFlag > 0 && *lotFlag != fut.Lotsize {
